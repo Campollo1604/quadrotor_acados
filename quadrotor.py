@@ -1,3 +1,5 @@
+#Script que define la fisica del dron, su estado y como se mueve
+
 from math import sqrt
 import numpy as np
 from utils import quaternion_to_euler, skew_symmetric, v_dot_q, unit_quat, quaternion_inverse
