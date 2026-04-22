@@ -145,38 +145,27 @@ class Quadrotor3D:
         x = self.get_state(quaternion=True, stacked=False) #Obtenemos el estado actual del dron, 4 arrays para cada uno de los "componentes"
 
         #Utilización de Runge-Kutta de 4º orden
-        k1 = [self.f_pos(x), self.f_att(x), self.f_vel(x, self.u, f_d), self.f_rate(x, self.u, t_d)]
-        x_aux = [x[i] + dt / 2 * k1[i] for i in range(4)]
-        k2 = [self.f_pos(x_aux), self.f_att(x_aux), self.f_vel(x_aux, self.u, f_d), self.f_rate(x_aux, self.u, t_d)]
+        k1 = [self.f_pos(x), self.f_att(x), self.f_vel(x, self.u, f_d), self.f_rate(x, self.u, t_d)] #Utilizando el estado actual del dron, calculamos las derivadas para conocer una primera dirección
+        x_aux = [x[i] + dt / 2 * k1[i] for i in range(4)] #Con la "tendencia" k1 calculado, se estima el estado para dt/2
+        k2 = [self.f_pos(x_aux), self.f_att(x_aux), self.f_vel(x_aux, self.u, f_d), self.f_rate(x_aux, self.u, t_d)] #Se sigue repitiendo el proceso hasta obtener k2, k3 y k4
         x_aux = [x[i] + dt / 2 * k2[i] for i in range(4)]
         k3 = [self.f_pos(x_aux), self.f_att(x_aux), self.f_vel(x_aux, self.u, f_d), self.f_rate(x_aux, self.u, t_d)]
         x_aux = [x[i] + dt * k3[i] for i in range(4)]
         k4 = [self.f_pos(x_aux), self.f_att(x_aux), self.f_vel(x_aux, self.u, f_d), self.f_rate(x_aux, self.u, t_d)]
         x = [x[i] + dt * (1.0 / 6.0 * k1[i] + 2.0 / 6.0 * k2[i] + 2.0 / 6.0 * k3[i] + 1.0 / 6.0 * k4[i]) for i in
-             range(4)]
+             range(4)] #Finalmente se obtiene la media, teniendo en cuenta que k2 y k3 tienen un mayor peso pq se encuentran en el medio del intervalo, donde se suele describir mejor la trayectoria
 
-        # Ensure unit quaternion
+        #Al integrar el cuaternion pudo haber perdido su módulo 1, se corrige para evitar una rotación distorsionada
         x[1] = unit_quat(x[1])
 
-        self.pos, self.angle, self.vel, self.a_rate = x
+        self.pos, self.angle, self.vel, self.a_rate = x #Obtenemos la posición "nueva"
 
-    def f_pos(self, x):
-        """
-        Time-derivative of the position vector
-        :param x: 4-length array of input state with components: 3D pos, quaternion angle, 3D vel, 3D rate
-        :return: position differential increment (vector): d[pos_x; pos_y]/dt
-        """
-
+    #Param x: 4-length array of input state with components: 3D pos, quaternion angle, 3D vel, 3D rate
+    def f_pos(self, x): #Derivada de la posición es la velocidad, como ya la sabemos, la buscamos en el 3 array 
         vel = x[2]
         return vel
 
     def f_att(self, x):
-        """
-        Time-derivative of the attitude in quaternion form
-        :param x: 4-length array of input state with components: 3D pos, quaternion angle, 3D vel, 3D rate
-        :return: attitude differential increment (quaternion qw, qx, qy, qz): da/dt
-        """
-
         rate = x[3]
         angle_quaternion = x[1]
 
