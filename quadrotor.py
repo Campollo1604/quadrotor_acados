@@ -146,7 +146,7 @@ class Quadrotor3D:
 
         #Utilización de Runge-Kutta de 4º orden
         k1 = [self.f_pos(x), self.f_att(x), self.f_vel(x, self.u, f_d), self.f_rate(x, self.u, t_d)] #Utilizando el estado actual del dron, calculamos las derivadas para conocer una primera dirección
-        x_aux = [x[i] + dt / 2 * k1[i] for i in range(4)] #Con la "tendencia" k1 calculado, se estima el estado para dt/2
+        x_aux = [x[i] + dt / 2 * k1[i] for i in range(4)] #Con la "tendencia" k1 calculada2, se estima el estado para dt/2
         k2 = [self.f_pos(x_aux), self.f_att(x_aux), self.f_vel(x_aux, self.u, f_d), self.f_rate(x_aux, self.u, t_d)] #Se sigue repitiendo el proceso hasta obtener k2, k3 y k4
         x_aux = [x[i] + dt / 2 * k2[i] for i in range(4)]
         k3 = [self.f_pos(x_aux), self.f_att(x_aux), self.f_vel(x_aux, self.u, f_d), self.f_rate(x_aux, self.u, t_d)]
@@ -165,13 +165,12 @@ class Quadrotor3D:
         vel = x[2]
         return vel
 
-    def f_att(self, x):
-        rate = x[3]
-        angle_quaternion = x[1]
-
+    def f_att(self, x): #Derivada del cuaternion (tasa de cambio de la rotación), se calcula con la ecuación de abajo, 1/2 de la matriz antisimetrica de las w *  producto escalar del cuaternión actual
+        rate = x[3] #Velocidades angulares
+        angle_quaternion = x[1] #Cuaterniones
         return 1 / 2 * skew_symmetric(rate).dot(angle_quaternion)
 
-    def f_vel(self, x, u, f_d):
+    def f_vel(self, x, u, f_d): #Derivada de la velocidad, aceleración
         """
         Time-derivative of the velocity vector
         :param x: 4-length array of input state with components: 3D pos, quaternion angle, 3D vel, 3D rate
@@ -180,38 +179,39 @@ class Quadrotor3D:
         :return: 3D velocity differential increment (vector): d[vel_x; vel_y; vel_z]/dt
         """
 
-        a_thrust = np.array([[0], [0], [np.sum(u)]]) / self.mass
-
-        if self.drag:
-            # Transform velocity to body frame
-            v_b = v_dot_q(x[2], quaternion_inverse(x[1]))[:, np.newaxis]
-            # Compute aerodynamic drag acceleration in world frame
+        a_thrust = np.array([[0], [0], [np.sum(u)]]) / self.mass #Calcula el empuje total, suma de los 4 motores entre la masa, en dirección z
+        #Utiliza la segunda ley de Newton, con el objetivo de sumar todas las fuerzas sobre el dron para saber cuanto cambia la v
+        if self.drag: #Solo si existe drag
+            #Busca proyectar la velocidad del sistema global al sistema del cuerpo del dron
+            v_b = v_dot_q(x[2], quaternion_inverse(x[1]))[:, np.newaxis] #El cuaternion rota del cuerpo al mundo, por eso se utiliza el inverso
+            #Drag aerodinámico principal, este crece con el cuadrado de la velocidad, y va en sentido contrario al movimiento del dron
             a_drag = -self.aero_drag * v_b ** 2 * np.sign(v_b) / self.mass
-            # Add rotor drag
+            #Ahora se calcula el drag de los rotores que es lineal
             a_drag -= self.rotor_drag * v_b / self.mass
-            # Transform drag acceleration to world frame
+            #Por último se lleva al sistema global
             a_drag = v_dot_q(a_drag, x[1])
         else:
             a_drag = np.zeros((3, 1))
 
         angle_quaternion = x[1]
 
-        a_payload = -self.payload_mass * self.g / self.mass
+        a_payload = -self.payload_mass * self.g / self.mass #En caso de haber payload
 
-        return np.squeeze(-self.g + a_payload + a_drag + v_dot_q(a_thrust + f_d / self.mass, angle_quaternion))
+        #Por último se hace la suma total de las aceleraciones, gravedad, carga, drag, empuje, perturbaciones
+        return np.squeeze(-self.g + a_payload + a_drag + v_dot_q(a_thrust + f_d / self.mass, angle_quaternion)) #Esta fórmula rota el empuje de los motores dependiendo de la orientación del dron
 
-    def f_rate(self, x, u, t_d):
-        """
-        Time-derivative of the angular rate
-        :param x: 4-length array of input state with components: 3D pos, quaternion angle, 3D vel, 3D rate
-        :param u: control input vector (4-dimensional): [trust_motor_1, ..., thrust_motor_4]
-        :param t_d: disturbance torque (3D)
-        :return: angular rate differential increment (scalar): dr/dt
-        """
-
+    def f_rate(self, x, u, t_d): #Derivada de la velocidad angular para obtener aceleración angular ω̇ = J⁻¹ (τ - ω × Jω)
         rate = x[3]
-        return np.array([
-            1 / self.J[0] * (u.dot(self.y_f) + t_d[0] + (self.J[1] - self.J[2]) * rate[1] * rate[2]),
-            1 / self.J[1] * (-u.dot(self.x_f) + t_d[1] + (self.J[2] - self.J[0]) * rate[2] * rate[0]),
-            1 / self.J[2] * (u.dot(self.z_l_tau) + t_d[2] + (self.J[0] - self.J[1]) * rate[0] * rate[1])
+        return np.array([ #El último término hace referencia al efecto giroscópico, aunque en x no se esté girando, si z e y si se genera una aceleracion tambien en X
+            1 / self.J[0] * (u.dot(self.y_f) + t_d[0] + (self.J[1] - self.J[2]) * rate[1] * rate[2]), #Roll. Primer término el de torque motor, multiplica los empujes por la posición en Y
+            1 / self.J[1] * (-u.dot(self.x_f) + t_d[1] + (self.J[2] - self.J[0]) * rate[2] * rate[0]), #Pitch. Primer término el de torque motor, multiplica los empujes por la posición en X
+            1 / self.J[2] * (u.dot(self.z_l_tau) + t_d[2] + (self.J[0] - self.J[1]) * rate[0] * rate[1]) #Yaw. Usa el torque de giro de las propias hélices
         ]).squeeze()
+"""
+Conclusiones despues del análisis
+Este script es el modelo físico digital del dron, como se comporta un cuadricóptero en el mundo real. 
+Este archivo hace principalmente 3 cosas:
+1)Define las características del dron, masa, brazos, inercia. La "ficha técnica".
+2)Obtiene el estado del dron: posición, velocidad, actitud y su giro.
+3)Simula como evoluciona el estado del dron cuando los motores reciben una señal
+"""
