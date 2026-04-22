@@ -79,36 +79,36 @@ class Quadrotor3D:
         self.payload_mass = 0.3  # kg
         self.payload_mass = self.payload_mass * payload #Si payload = True = 1, si no False = 0
 
-    def set_state(self, *args, **kwargs):
+    def set_state(self, *args, **kwargs): #Sirve para colocar al dron en una posición específica. Se puede hacer de dos formas, con un array de 13 números o con argumentos con nombres
         if len(args) != 0:
-            assert len(args) == 1 and len(args[0]) == 13
+            assert len(args) == 1 and len(args[0]) == 13 #Entrada por lista. Se comprueba que has pasado los datos exactos
             self.pos[0], self.pos[1], self.pos[2], \
             self.angle[0], self.angle[1], self.angle[2], self.angle[3], \
             self.vel[0], self.vel[1], self.vel[2], \
             self.a_rate[0], self.a_rate[1], self.a_rate[2] \
                 = args[0]
 
-        else:
+        else: #Entrada por nombre
             self.pos = kwargs["pos"]
             self.angle = kwargs["angle"]
             self.vel = kwargs["vel"]
             self.a_rate = kwargs["rate"]
 
-    def get_state(self, quaternion=False, stacked=False):
+    def get_state(self, quaternion=False, stacked=False): #Esta función devuelve la información en formatos diferentes. Cuaterniones o ángulos de Euler / Lista de arrays o lista plana
 
         if quaternion and not stacked:
-            return [self.pos, self.angle, self.vel, self.a_rate]
+            return [self.pos, self.angle, self.vel, self.a_rate] #Devuelve 4 arrays
         if quaternion and stacked:
-            return [self.pos[0], self.pos[1], self.pos[2], self.angle[0], self.angle[1], self.angle[2], self.angle[3],
+            return [self.pos[0], self.pos[1], self.pos[2], self.angle[0], self.angle[1], self.angle[2], self.angle[3], #Devuelve el estado completo del dron (13)
                     self.vel[0], self.vel[1], self.vel[2], self.a_rate[0], self.a_rate[1], self.a_rate[2]]
 
-        angle = quaternion_to_euler(self.angle)
+        angle = quaternion_to_euler(self.angle) #Transforma cuaterniones en ángulos de Euler
         if not quaternion and stacked:
-            return [self.pos[0], self.pos[1], self.pos[2], angle[0], angle[1], angle[2],
+            return [self.pos[0], self.pos[1], self.pos[2], angle[0], angle[1], angle[2], #En este caso 12 números al ser ángulos de Euler
                     self.vel[0], self.vel[1], self.vel[2], self.a_rate[0], self.a_rate[1], self.a_rate[2]]
         return [self.pos, angle, self.vel, self.a_rate]
 
-    def get_control(self, noisy=False):
+    def get_control(self, noisy=False): #Saber si trabajamos en mundo teórico o real 
         if not noisy:
             return self.u_noiseless
         else:
