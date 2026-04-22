@@ -114,38 +114,37 @@ class Quadrotor3D:
         else:
             return self.u
 
-    def update(self, u, dt):
+    def update(self, u, dt): #Calcula como se mueve el dron en el tiempo
         """
         Runge-Kutta 4th order dynamics integration
 
         :param u: 4-dimensional vector with components between [0.0, 1.0] that represent the activation of each motor.
         :param dt: time differential
         """
-
-        # Clip inputs
+        #Toma la entrada u y normaliza entre [0,1], entiendo que por facilidad y protección
         for i, u_i in enumerate(u):
             self.u_noiseless[i] = max(min(u_i, self.max_input_value), self.min_input_value)
 
-        # Apply noise to inputs (uniformly distributed noise with standard deviation proportional to input magnitude)
+        #Dos opciones para la configuración de los motores
         if self.motor_noise:
-            for i, u_i in enumerate(self.u_noiseless):
-                std = 0.02 * sqrt(u_i)
-                noise_u = np.random.normal(loc=0.1 * (u_i / 1.3) ** 2, scale=std)
-                self.u[i] = max(min(u_i - noise_u, self.max_input_value), self.min_input_value) * self.max_thrust
+            for i, u_i in enumerate(self.u_noiseless): #El caso con ruido 
+                std = 0.02 * sqrt(u_i) #Ruido aumenta con la potencia, cuánto más gira el motor, más vibraciones y turbulencias 
+                noise_u = np.random.normal(loc=0.1 * (u_i / 1.3) ** 2, scale=std) #Sesgo(bias), los motores dan menos potencia de la pedida (EFICIENCIA), sobretodo a altas potencias
+                self.u[i] = max(min(u_i - noise_u, self.max_input_value), self.min_input_value) * self.max_thrust #Obtienes el valor real de la potencia, restando el "ruido", normalizando y multiplicando por empuje maximo
         else:
-            self.u = self.u_noiseless * self.max_thrust
+            self.u = self.u_noiseless * self.max_thrust #El caso sin ruido es sencillo, se multiplica la señal normalizada arriba por la potencia máxima
 
-        # Generate disturbance forces / torques
+        #Aquí se configuran las perturbaciones externas como el viento, las turbulencias etc. En este caso fuerza y torque de disturbio
         if self.noisy:
-            f_d = np.random.normal(size=(3, 1), scale=10 * dt)
+            f_d = np.random.normal(size=(3, 1), scale=10 * dt) #Aplica una fuerza aleatoria en cada uno de los ejes y hace que sea proporcional al paso del tiempo. Cuanto más dura el instante que simulo, mayor puede ser la perturbación en ese instante
             t_d = np.random.normal(size=(3, 1), scale=10 * dt)
         else:
-            f_d = np.zeros((3, 1))
+            f_d = np.zeros((3, 1)) #Sin ruido las perturbaciones son cero
             t_d = np.zeros((3, 1))
 
-        x = self.get_state(quaternion=True, stacked=False)
+        x = self.get_state(quaternion=True, stacked=False) #Obtenemos el estado actual del dron, 4 arrays para cada uno de los "componentes"
 
-        # RK4 integration
+        #Utilización de Runge-Kutta de 4º orden
         k1 = [self.f_pos(x), self.f_att(x), self.f_vel(x, self.u, f_d), self.f_rate(x, self.u, t_d)]
         x_aux = [x[i] + dt / 2 * k1[i] for i in range(4)]
         k2 = [self.f_pos(x_aux), self.f_att(x_aux), self.f_vel(x_aux, self.u, f_d), self.f_rate(x_aux, self.u, t_d)]
